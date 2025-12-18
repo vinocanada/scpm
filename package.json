@@ -16,7 +16,11 @@
   },
   "dependencies": {
     "@capacitor/android": "^8.0.0",
+    "@capacitor/camera": "^8.0.0",
     "@capacitor/core": "^8.0.0",
+    "@capacitor/geolocation": "^8.0.0",
+    "@capacitor/local-notifications": "^8.0.0",
+    "firebase": "^12.7.0",
     "framer-motion": "^12.23.26",
     "isbot": "5.1.26",
     "pdf-lib": "^1.17.1",

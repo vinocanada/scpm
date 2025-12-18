@@ -1,6 +1,6 @@
 import React from "react";
 import { useOutletContext } from "react-router";
-import type { Photo } from "../lib/domain";
+import type { JobPhoto } from "../lib/models";
 import type { PhotosOutletContext } from "./app.photos";
 
 function clamp(n: number, min: number, max: number) {
@@ -16,7 +16,7 @@ export default function PhotosGallery() {
   const start = React.useRef<{ x: number; y: number; px: number; py: number } | null>(null);
 
   const photos = filtered;
-  const openPhoto: Photo | undefined = openId ? photos.find((p) => p.id === openId) : undefined;
+  const openPhoto: JobPhoto | undefined = openId ? photos.find((p) => p.id === openId) : undefined;
 
   React.useEffect(() => {
     setOpenId(null);
@@ -53,7 +53,15 @@ export default function PhotosGallery() {
               className="relative aspect-square overflow-hidden rounded-2xl border border-gray-200 bg-gray-50"
               onClick={() => setOpenId(p.id)}
             >
-              <img src={p.dataUrl} alt="Job progress thumbnail" className="h-full w-full object-cover" />
+              {!p.isVideo && p.imageURL ? (
+                <img src={p.imageURL} alt="Job progress thumbnail" className="h-full w-full object-cover" />
+              ) : p.isVideo ? (
+                <div className="flex h-full w-full items-center justify-center bg-black text-xs font-semibold text-white">
+                  VIDEO
+                </div>
+              ) : (
+                <div className="flex h-full w-full items-center justify-center text-xs text-gray-500">Missing</div>
+              )}
             </button>
           ))}
         </div>
@@ -112,17 +120,23 @@ export default function PhotosGallery() {
                   setZoom(next);
                 }}
               >
-                <img
-                  src={openPhoto.dataUrl}
-                  alt="Job progress"
-                  className="absolute inset-0 h-full w-full select-none object-contain"
-                  style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}
-                  draggable={false}
-                />
+                {!openPhoto.isVideo && openPhoto.imageURL ? (
+                  <img
+                    src={openPhoto.imageURL}
+                    alt="Job progress"
+                    className="absolute inset-0 h-full w-full select-none object-contain"
+                    style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}
+                    draggable={false}
+                  />
+                ) : openPhoto.isVideo && openPhoto.videoURL ? (
+                  <video src={openPhoto.videoURL} className="absolute inset-0 h-full w-full object-contain" controls />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center text-sm text-white/70">Missing media</div>
+                )}
               </div>
 
               <div className="flex items-center justify-between gap-2 px-4 py-3">
-                <div className="text-xs text-gray-500">{new Date(openPhoto.createdAt).toLocaleString()}</div>
+                <div className="text-xs text-gray-500">{new Date(openPhoto.date).toLocaleString()}</div>
                 <div className="flex gap-2">
                   <button
                     className="rounded-2xl border border-gray-200 px-3 py-2 text-sm font-semibold hover:bg-gray-50"

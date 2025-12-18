@@ -10,10 +10,11 @@ export function SideMenu({
   open: boolean;
   onClose(): void;
 }) {
-  const { session, setSession, users, sites } = useApp();
+  const { session, clearSession, employees, jobSites, timeEntries } = useApp();
   const nav = useNavigate();
-  const user = users.find((u) => u.id === session.userId);
-  const site = sites.find((s) => s.id === session.activeSiteId);
+  const user = employees.find((u) => u.id === session.employeeId);
+  const site = jobSites.find((s) => s.id === session.activeSiteId);
+  const activeTimeEntry = timeEntries.find((t) => t.employeeId === session.employeeId && !t.clockOutTime);
 
   return (
     <AnimatePresence>
@@ -55,7 +56,7 @@ export function SideMenu({
                 <div className="text-xs font-semibold text-gray-500">Active job site (memorized)</div>
                 <div className="mt-1 text-sm font-medium text-gray-900">{site?.name ?? "None selected"}</div>
                 <div className="mt-1 text-xs text-gray-500">
-                  {session.activeShiftId ? "Clocked in" : "Not clocked in"}
+                  {activeTimeEntry ? "Clocked in" : "Not clocked in"}
                 </div>
               </div>
 
@@ -69,8 +70,17 @@ export function SideMenu({
                 <Link className="block rounded-xl px-3 py-2 text-gray-900 hover:bg-gray-100" to="/app/photos">
                   Photos
                 </Link>
+                <Link className="block rounded-xl px-3 py-2 text-gray-900 hover:bg-gray-100" to="/app/reports">
+                  Reports
+                </Link>
+                <Link className="block rounded-xl px-3 py-2 text-gray-900 hover:bg-gray-100" to="/app/tracking">
+                  Tracking
+                </Link>
                 <Link className="block rounded-xl px-3 py-2 text-gray-900 hover:bg-gray-100" to="/app/manage">
                   Manage
+                </Link>
+                <Link className="block rounded-xl px-3 py-2 text-gray-900 hover:bg-gray-100" to="/app/profile">
+                  Profile
                 </Link>
               </div>
 
@@ -78,7 +88,7 @@ export function SideMenu({
                 <button
                   className="w-full rounded-xl bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-black"
                   onClick={() => {
-                    setSession({});
+                    clearSession();
                     onClose();
                     nav("/");
                   }}

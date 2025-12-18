@@ -2,25 +2,17 @@ import React from "react";
 import { Outlet, NavLink, useLocation, useSearchParams } from "react-router";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { useApp } from "../components/AppProvider";
-import type { Photo, User } from "../lib/domain";
-import { upsertPhoto } from "../lib/db";
-import { makeId } from "../lib/storage";
+import type { Employee, JobPhoto } from "../lib/models";
+import { uuid } from "../lib/storage";
 
 export type PhotosOutletContext = {
   activeSiteId: string;
-  usersById: Map<string, User>;
+  employeesById: Map<string, Employee>;
   allTags: string[];
-  filtered: Photo[];
+  filtered: JobPhoto[];
 };
 
-function uniqueTags(photos: Photo[]) {
-  const set = new Set<string>();
-  for (const p of photos) for (const t of p.tags) if (t.trim()) set.add(t.trim());
-  return Array.from(set).sort((a, b) => a.localeCompare(b));
-}
-
 function withinMonth(iso: string, month: string) {
-  // month = YYYY-MM
   if (!month) return true;
   return iso.slice(0, 7) === month;
 }
@@ -32,25 +24,18 @@ function withinRange(iso: string, from?: string, to?: string) {
   return true;
 }
 
-async function toDataUrl(file: File): Promise<string> {
-  return await new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onerror = () => reject(new Error("Failed to read file"));
-    r.onload = () => resolve(String(r.result));
-    r.readAsDataURL(file);
-  });
+async function fileToBytes(file: File): Promise<Uint8Array> {
+  const buf = await file.arrayBuffer();
+  return new Uint8Array(buf);
 }
 
-function dataUrlToBytes(dataUrl: string): Uint8Array {
-  const comma = dataUrl.indexOf(",");
-  const b64 = comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl;
-  const bin = atob(b64);
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  return bytes;
+async function fetchBytes(url: string): Promise<Uint8Array> {
+  const res = await fetch(url);
+  const buf = await res.arrayBuffer();
+  return new Uint8Array(buf);
 }
 
-async function downloadDailyPdf(opts: { siteName: string; date: string; photos: Photo[]; usersById: Map<string, User> }) {
+async function downloadDailyPdf(opts: { siteName: string; date: string; photos: JobPhoto[]; employeesById: Map<string, Employee> }) {
   const pdf = await PDFDocument.create();
   const font = await pdf.embedFont(StandardFonts.Helvetica);
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
@@ -64,36 +49,39 @@ async function downloadDailyPdf(opts: { siteName: string; date: string; photos: 
   page.drawText(`${opts.siteName} — ${opts.date}`, { x: 48, y, size: 12, font, color: rgb(0.35, 0.35, 0.35) });
   y -= 28;
 
-  const items = opts.photos.slice(0, 25); // MVP safety limit
+  const items = opts.photos.slice(0, 20);
   for (const p of items) {
     if (y < 170) {
       page = pdf.addPage([612, 792]);
       ({ height } = page.getSize());
       y = height - 60;
     }
-    const author = opts.usersById.get(p.userId)?.name ?? "Unknown";
-    page.drawText(`${new Date(p.createdAt).toLocaleString()} — ${author}`, { x: 48, y, size: 10, font: bold });
+    const author = opts.employeesById.get(p.employeeId)?.name ?? "Unknown";
+    page.drawText(`${new Date(p.date).toLocaleString()} — ${author}`, { x: 48, y, size: 10, font: bold });
     y -= 14;
 
-    // Photo thumbnail (best effort)
-    try {
-      const bytes = dataUrlToBytes(p.dataUrl);
-      const isPng = p.dataUrl.startsWith("data:image/png");
-      const img = isPng ? await pdf.embedPng(bytes) : await pdf.embedJpg(bytes);
-      const maxW = 160;
-      const maxH = 110;
-      const scale = Math.min(maxW / img.width, maxH / img.height, 1);
-      const w = img.width * scale;
-      const h = img.height * scale;
-      page.drawImage(img, { x: 48, y: y - h, width: w, height: h });
-    } catch {
-      page.drawText("(Photo omitted)", { x: 48, y: y - 10, size: 9, font, color: rgb(0.5, 0.5, 0.5) });
+    // Thumbnail (images only)
+    if (!p.isVideo && p.imageURL) {
+      try {
+        const bytes = await fetchBytes(p.imageURL);
+        const isPng = p.imageURL.toLowerCase().includes(".png");
+        const img = isPng ? await pdf.embedPng(bytes) : await pdf.embedJpg(bytes);
+        const maxW = 160;
+        const maxH = 110;
+        const scale = Math.min(maxW / img.width, maxH / img.height, 1);
+        const w = img.width * scale;
+        const h = img.height * scale;
+        page.drawImage(img, { x: 48, y: y - h, width: w, height: h });
+      } catch {
+        page.drawText("(Image omitted)", { x: 48, y: y - 10, size: 9, font, color: rgb(0.5, 0.5, 0.5) });
+      }
+    } else if (p.isVideo) {
+      page.drawText("(Video)", { x: 48, y: y - 10, size: 9, font, color: rgb(0.5, 0.5, 0.5) });
     }
 
-    const note = (p.note ?? "").trim();
     const tags = p.tags.length ? `Tags: ${p.tags.join(", ")}` : "";
-    const comments = p.comments.map((c) => `• ${(opts.usersById.get(c.userId)?.name ?? "User")}: ${c.text}`).join("\n");
-    const block = [note, tags, comments].filter(Boolean).join("\n");
+    const comment = p.comment?.trim() ? `Comment: ${p.comment.trim()}` : "";
+    const block = [tags, comment].filter(Boolean).join("\n");
     let textY = y;
     const textX = 48 + 170;
     if (block) {
@@ -103,7 +91,7 @@ async function downloadDailyPdf(opts: { siteName: string; date: string; photos: 
         textY -= 12;
       }
     } else {
-      page.drawText("(No notes/comments)", { x: textX, y: textY, size: 9, font, color: rgb(0.5, 0.5, 0.5) });
+      page.drawText("(No tags/comments)", { x: textX, y: textY, size: 9, font, color: rgb(0.5, 0.5, 0.5) });
     }
     y -= 130;
   }
@@ -119,15 +107,14 @@ async function downloadDailyPdf(opts: { siteName: string; date: string; photos: 
 }
 
 export default function PhotosLayout() {
-  const { session, users, sites, photos, refresh } = useApp();
+  const { session, employees, jobSites, photos, tags, uploadImage, uploadVideo, savePhoto } = useApp();
   const loc = useLocation();
   const [params, setParams] = useSearchParams();
   const fileRef = React.useRef<HTMLInputElement | null>(null);
 
   const activeSiteId = session.activeSiteId;
-  const activeSite = sites.find((s) => s.id === activeSiteId);
-
-  const usersById = React.useMemo(() => new Map(users.map((u) => [u.id, u])), [users]);
+  const activeSite = jobSites.find((s) => s.id === activeSiteId);
+  const employeesById = React.useMemo(() => new Map(employees.map((e) => [e.id, e])), [employees]);
 
   const q = (params.get("q") ?? "").trim().toLowerCase();
   const tag = (params.get("tag") ?? "").trim();
@@ -136,18 +123,20 @@ export default function PhotosLayout() {
   const to = params.get("to") ?? "";
 
   const sitePhotos = photos.filter((p) => (activeSiteId ? p.siteId === activeSiteId : true));
-  const allTags = React.useMemo(() => uniqueTags(sitePhotos), [sitePhotos]);
+  const allTags = React.useMemo(() => tags.map((t) => t.name).sort((a, b) => a.localeCompare(b)), [tags]);
 
-  const filtered = sitePhotos.filter((p) => {
-    if (month && !withinMonth(p.createdAt, month)) return false;
-    if ((from || to) && !withinRange(p.createdAt, from || undefined, to || undefined)) return false;
-    if (tag && !p.tags.includes(tag)) return false;
-    if (q) {
-      const txt = `${p.note ?? ""} ${p.tags.join(" ")} ${p.comments.map((c) => c.text).join(" ")}`.toLowerCase();
-      if (!txt.includes(q)) return false;
-    }
-    return true;
-  });
+  const filtered = sitePhotos
+    .filter((p) => {
+      if (month && !withinMonth(p.date, month)) return false;
+      if ((from || to) && !withinRange(p.date, from || undefined, to || undefined)) return false;
+      if (tag && !p.tags.includes(tag)) return false;
+      if (q) {
+        const txt = `${p.comment ?? ""} ${p.tags.join(" ")}`.toLowerCase();
+        if (!txt.includes(q)) return false;
+      }
+      return true;
+    })
+    .sort((a, b) => b.date.localeCompare(a.date));
 
   const today = new Date().toISOString().slice(0, 10);
 
@@ -158,20 +147,34 @@ export default function PhotosLayout() {
     setParams(next, { replace: true });
   };
 
-  const onPickPhoto = async (file?: File | null) => {
+  const onPickMedia = async (file?: File | null) => {
     if (!file) return;
-    if (!activeSiteId) return;
-    const dataUrl = await toDataUrl(file);
-    upsertPhoto({
-      id: makeId("photo"),
-      userId: session.userId!,
+    if (!session.companyId || !session.employeeId || !activeSiteId) return;
+
+    const bytes = await fileToBytes(file);
+    const isVideo = file.type.startsWith("video/");
+    const id = uuid();
+    const sessionId = uuid();
+
+    const url = isVideo
+      ? await uploadVideo({ bytes, photoId: id })
+      : await uploadImage({ bytes, photoId: id });
+
+    if (!url) return;
+
+    await savePhoto({
+      id,
+      companyId: session.companyId,
+      sessionId,
       siteId: activeSiteId,
-      createdAt: new Date().toISOString(),
-      dataUrl,
+      employeeId: session.employeeId,
+      imageURL: isVideo ? undefined : url,
+      videoURL: isVideo ? url : undefined,
+      isVideo,
+      comment: "",
       tags: [],
-      comments: [],
+      date: new Date().toISOString(),
     });
-    refresh();
   };
 
   return (
@@ -181,7 +184,7 @@ export default function PhotosLayout() {
           <div>
             <div className="text-sm font-semibold text-gray-900">Photos</div>
             <div className="text-xs text-gray-500">
-              Feed + Gallery. Filter by date/month/tags. Add comments per photo.
+              Feed + Gallery. Filter by date/month/tags. Photos/videos stored in Firebase Storage.
             </div>
           </div>
           <button
@@ -194,9 +197,9 @@ export default function PhotosLayout() {
           <input
             ref={fileRef}
             type="file"
-            accept="image/*"
+            accept="image/*,video/*"
             className="hidden"
-            onChange={(e) => onPickPhoto(e.target.files?.[0] ?? null)}
+            onChange={(e) => void onPickMedia(e.target.files?.[0] ?? null)}
           />
         </div>
 
@@ -213,7 +216,7 @@ export default function PhotosLayout() {
             <div className="grid grid-cols-2 gap-2">
               <input
                 className="col-span-2 rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/20"
-                placeholder="Search notes/tags/comments…"
+                placeholder="Search comment/tags…"
                 value={params.get("q") ?? ""}
                 onChange={(e) => setParam("q", e.target.value)}
               />
@@ -277,12 +280,12 @@ export default function PhotosLayout() {
                 className="rounded-2xl bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-black disabled:opacity-50"
                 disabled={!activeSiteId}
                 onClick={() => {
-                  const daily = photos.filter((p) => p.siteId === activeSiteId && p.createdAt.slice(0, 10) === today);
+                  const daily = photos.filter((p) => p.siteId === activeSiteId && p.date.slice(0, 10) === today);
                   void downloadDailyPdf({
                     siteName: activeSite?.name ?? "Site",
                     date: today,
                     photos: daily,
-                    usersById,
+                    employeesById,
                   });
                 }}
               >
@@ -322,7 +325,7 @@ export default function PhotosLayout() {
       <Outlet
         context={{
           activeSiteId: activeSiteId ?? "",
-          usersById,
+          employeesById,
           allTags,
           filtered,
         } satisfies PhotosOutletContext}

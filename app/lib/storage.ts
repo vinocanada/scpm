@@ -29,3 +29,8 @@ export function makeId(prefix = "id") {
   return uuid ? `${prefix}_${uuid}` : `${prefix}_${Date.now()}_${Math.random().toString(16).slice(2)}`;
 }
 
+export function uuid() {
+  const g = globalThis as unknown as { crypto?: Crypto };
+  return g.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+

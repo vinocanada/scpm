@@ -1,4 +1,5 @@
 import type { BreakSegment, Shift } from "./domain";
+import type { BreakEntry, TimeEntry } from "./models";
 
 export function parseIso(iso?: string) {
   if (!iso) return undefined;
@@ -25,6 +26,23 @@ export function shiftWorkSeconds(shift: Shift, now = new Date()) {
 export function formatHours(seconds: number) {
   const hours = seconds / 3600;
   return `${hours.toFixed(2)}h`;
+}
+
+export function timeEntryWorkSeconds(entry: TimeEntry, now = new Date()) {
+  const start = parseIso(entry.clockInTime);
+  if (!start) return 0;
+  const end = parseIso(entry.clockOutTime) ?? now;
+  const total = Math.max(0, (end.getTime() - start.getTime()) / 1000);
+
+  const breakSeconds = (b: BreakEntry) => {
+    const s = parseIso(b.startTime);
+    if (!s) return 0;
+    const e = parseIso(b.endTime) ?? now;
+    return Math.max(0, (e.getTime() - s.getTime()) / 1000);
+  };
+
+  const breaks = (entry.breaks ?? []).reduce((acc, b) => acc + breakSeconds(b), 0);
+  return Math.max(0, total - breaks);
 }
 
 export function startOfDay(d: Date) {

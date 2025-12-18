@@ -5,20 +5,21 @@ import { SideMenu } from "../components/SideMenu";
 import { useApp } from "../components/AppProvider";
 
 export default function AppLayout() {
-  const { ready, session, users, sites } = useApp();
+  const { ready, session, employees, jobSites, timeEntries } = useApp();
   const nav = useNavigate();
   const loc = useLocation();
   const [menuOpen, setMenuOpen] = React.useState(false);
 
   React.useEffect(() => setMenuOpen(false), [loc.pathname]);
 
-  const user = users.find((u) => u.id === session.userId);
-  const site = sites.find((s) => s.id === session.activeSiteId);
+  const user = employees.find((u) => u.id === session.employeeId);
+  const site = jobSites.find((s) => s.id === session.activeSiteId);
+  const activeTimeEntry = timeEntries.find((t) => t.employeeId === session.employeeId && !t.clockOutTime);
 
   React.useEffect(() => {
     if (!ready) return;
-    if (!session.userId) nav("/");
-  }, [ready, session.userId, nav]);
+    if (!session.companyId || !session.employeeId) nav("/");
+  }, [ready, session.companyId, session.employeeId, nav]);
 
   if (!ready) {
     return (
@@ -32,7 +33,7 @@ export default function AppLayout() {
     );
   }
 
-  if (!session.userId) return null;
+  if (!session.companyId || !session.employeeId) return null;
 
   return (
     <div className="min-h-dvh bg-gradient-to-b from-gray-50 via-white to-white">
@@ -43,7 +44,7 @@ export default function AppLayout() {
               {site ? site.name : "Select a job site"}
             </div>
             <div className="truncate text-xs text-gray-500">
-              {user?.name ?? "—"} · {session.activeShiftId ? "Clocked in" : "Not clocked in"}
+              {user?.name ?? "—"} · {activeTimeEntry ? "Clocked in" : "Not clocked in"}
             </div>
           </div>
           <button

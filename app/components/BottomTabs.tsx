@@ -1,7 +1,7 @@
 import { NavLink } from "react-router";
-import type { Role } from "../lib/domain";
+import type { Role } from "../lib/models";
 
-function TabIcon({ name }: { name: "dashboard" | "clock" | "photos" | "manage" }) {
+function TabIcon({ name }: { name: "dashboard" | "clock" | "photos" | "manage" | "profile" }) {
   const cls = "h-5 w-5";
   switch (name) {
     case "dashboard":
@@ -38,6 +38,13 @@ function TabIcon({ name }: { name: "dashboard" | "clock" | "photos" | "manage" }
           <path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z" />
         </svg>
       );
+    case "profile":
+      return (
+        <svg viewBox="0 0 24 24" className={cls} fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M20 21a8 8 0 0 0-16 0" />
+          <path d="M12 13a4 4 0 1 0-4-4 4 4 0 0 0 4 4Z" />
+        </svg>
+      );
   }
 }
 
@@ -50,7 +57,7 @@ export function BottomTabs({ role }: { role?: Role }) {
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-gray-200 bg-white/90 backdrop-blur supports-[backdrop-filter]:bg-white/70">
       <div className="mx-auto max-w-md px-3 py-2">
-        <div className="grid grid-cols-4 gap-2">
+        <div className={`grid gap-2 ${role === "manager" ? "grid-cols-5" : "grid-cols-4"}`}>
           <NavLink
             to="/app"
             end
@@ -73,12 +80,21 @@ export function BottomTabs({ role }: { role?: Role }) {
             <TabIcon name="photos" />
             <span className="text-xs font-medium">Photos</span>
           </NavLink>
+          {role === "manager" ? (
+            <NavLink
+              to="/app/manage"
+              className={({ isActive }) => `${base} ${isActive ? active : inactive}`}
+            >
+              <TabIcon name="manage" />
+              <span className="text-xs font-medium">Manage</span>
+            </NavLink>
+          ) : null}
           <NavLink
-            to="/app/manage"
-            className={({ isActive }) => `${base} ${isActive ? active : inactive} ${role === "manager" ? "" : "opacity-50 pointer-events-none"}`}
+            to="/app/profile"
+            className={({ isActive }) => `${base} ${isActive ? active : inactive}`}
           >
-            <TabIcon name="manage" />
-            <span className="text-xs font-medium">Manage</span>
+            <TabIcon name="profile" />
+            <span className="text-xs font-medium">Profile</span>
           </NavLink>
         </div>
       </div>

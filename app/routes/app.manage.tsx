@@ -1,21 +1,21 @@
 import React from "react";
 import { useApp } from "../components/AppProvider";
-import type { Role } from "../lib/domain";
-import { upsertSite, upsertUser } from "../lib/db";
-import { makeId } from "../lib/storage";
+import type { Role } from "../lib/models";
+import { uuid } from "../lib/storage";
 
 export default function Manage() {
-  const { session, users, sites, refresh } = useApp();
-  const me = users.find((u) => u.id === session.userId);
+  const { session, employees, jobSites, tags, saveEmployee, deleteEmployee, saveJobSite, deleteJobSite, saveTag, deleteTag } = useApp();
+  const me = employees.find((u) => u.id === session.employeeId);
 
   const [empName, setEmpName] = React.useState("");
   const [empRole, setEmpRole] = React.useState<Role>("employee");
+  const [empPin, setEmpPin] = React.useState("0000");
 
   const [siteName, setSiteName] = React.useState("");
-  const [siteAddress, setSiteAddress] = React.useState("");
   const [siteLat, setSiteLat] = React.useState("");
   const [siteLng, setSiteLng] = React.useState("");
   const [siteRadius, setSiteRadius] = React.useState("250");
+  const [tagName, setTagName] = React.useState("");
 
   if (!me) {
     return (
@@ -54,15 +54,28 @@ export default function Manage() {
             <option value="manager">Manager</option>
           </select>
         </div>
+        <input
+          className="mt-2 w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm tracking-widest focus:outline-none focus:ring-2 focus:ring-gray-900/20"
+          placeholder="PIN (4 digits)"
+          inputMode="numeric"
+          value={empPin}
+          onChange={(e) => setEmpPin(e.target.value)}
+        />
         <button
           className="mt-2 w-full rounded-2xl bg-gray-900 px-4 py-3 text-sm font-semibold text-white hover:bg-black disabled:opacity-50"
-          disabled={!empName.trim()}
+          disabled={!session.companyId || !empName.trim() || empPin.trim().length < 4}
           onClick={() => {
-            const now = new Date().toISOString();
-            upsertUser({ id: makeId("usr"), name: empName.trim(), role: empRole, createdAt: now });
+            if (!session.companyId) return;
+            void saveEmployee({
+              id: uuid(),
+              companyId: session.companyId,
+              name: empName.trim(),
+              role: empRole,
+              pin: empPin.trim(),
+            });
             setEmpName("");
             setEmpRole("employee");
-            refresh();
+            setEmpPin("0000");
           }}
         >
           Add user
@@ -78,24 +91,18 @@ export default function Manage() {
             value={siteName}
             onChange={(e) => setSiteName(e.target.value)}
           />
-          <input
-            className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/20"
-            placeholder="Address (optional)"
-            value={siteAddress}
-            onChange={(e) => setSiteAddress(e.target.value)}
-          />
           <div className="grid grid-cols-2 gap-2">
             <input
               inputMode="decimal"
               className="rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/20"
-              placeholder="Latitude (optional)"
+              placeholder="Latitude"
               value={siteLat}
               onChange={(e) => setSiteLat(e.target.value)}
             />
             <input
               inputMode="decimal"
               className="rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/20"
-              placeholder="Longitude (optional)"
+              placeholder="Longitude"
               value={siteLng}
               onChange={(e) => setSiteLng(e.target.value)}
             />
@@ -110,27 +117,25 @@ export default function Manage() {
         </div>
         <button
           className="mt-2 w-full rounded-2xl bg-gray-900 px-4 py-3 text-sm font-semibold text-white hover:bg-black disabled:opacity-50"
-          disabled={!siteName.trim()}
+          disabled={!session.companyId || !siteName.trim() || !siteLat.trim() || !siteLng.trim()}
           onClick={() => {
-            const now = new Date().toISOString();
-            const lat = siteLat.trim() ? Number(siteLat) : undefined;
-            const lng = siteLng.trim() ? Number(siteLng) : undefined;
-            const radiusMeters = siteRadius.trim() ? Number(siteRadius) : undefined;
-            upsertSite({
-              id: makeId("site"),
+            if (!session.companyId) return;
+            const latitude = Number(siteLat);
+            const longitude = Number(siteLng);
+            const radius = Number(siteRadius || "250");
+            if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
+            void saveJobSite({
+              id: uuid(),
+              companyId: session.companyId,
               name: siteName.trim(),
-              address: siteAddress.trim() || undefined,
-              lat: Number.isFinite(lat as number) ? lat : undefined,
-              lng: Number.isFinite(lng as number) ? lng : undefined,
-              radiusMeters: Number.isFinite(radiusMeters as number) ? radiusMeters : undefined,
-              createdAt: now,
+              latitude,
+              longitude,
+              radius: Number.isFinite(radius) ? radius : 250,
             });
             setSiteName("");
-            setSiteAddress("");
             setSiteLat("");
             setSiteLng("");
             setSiteRadius("250");
-            refresh();
           }}
         >
           Add site
@@ -138,33 +143,90 @@ export default function Manage() {
       </section>
 
       <section className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
-        <div className="text-sm font-semibold text-gray-900">Current users</div>
+        <div className="text-sm font-semibold text-gray-900">Employees</div>
         <div className="mt-3 space-y-2">
-          {users.map((u) => (
-            <div key={u.id} className="flex items-center justify-between rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3">
+          {employees
+            .filter((e) => e.companyId === session.companyId)
+            .map((u) => (
+            <div
+              key={u.id}
+              className="flex items-center justify-between rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3"
+            >
               <div>
                 <div className="text-sm font-semibold text-gray-900">{u.name}</div>
-                <div className="text-xs text-gray-500">{u.role}</div>
+                <div className="text-xs text-gray-500">{u.role} · PIN {u.pin}</div>
               </div>
-              <div className="text-xs text-gray-500">{u.id.slice(0, 10)}…</div>
+              <button
+                className="rounded-xl border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-900 hover:bg-gray-50"
+                onClick={() => void deleteEmployee(u.id)}
+              >
+                Delete
+              </button>
             </div>
           ))}
         </div>
       </section>
 
       <section className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
-        <div className="text-sm font-semibold text-gray-900">Current job sites</div>
+        <div className="text-sm font-semibold text-gray-900">Job sites</div>
         <div className="mt-3 space-y-2">
-          {sites.map((s) => (
+          {jobSites
+            .filter((s) => s.companyId === session.companyId)
+            .map((s) => (
             <div key={s.id} className="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3">
-              <div className="text-sm font-semibold text-gray-900">{s.name}</div>
-              <div className="mt-1 text-xs text-gray-500">
-                {s.address ? `${s.address} · ` : ""}
-                {s.lat != null && s.lng != null ? `(${s.lat}, ${s.lng}) · ` : ""}
-                {s.radiusMeters != null ? `radius ${s.radiusMeters}m` : "no radius set"}
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-sm font-semibold text-gray-900">{s.name}</div>
+                  <div className="mt-1 text-xs text-gray-500">
+                    ({s.latitude}, {s.longitude}) · radius {s.radius}m
+                  </div>
+                </div>
+                <button
+                  className="rounded-xl border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-900 hover:bg-gray-50"
+                  onClick={() => void deleteJobSite(s.id)}
+                >
+                  Delete
+                </button>
               </div>
             </div>
           ))}
+        </div>
+      </section>
+
+      <section className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
+        <div className="text-sm font-semibold text-gray-900">Photo tags</div>
+        <div className="mt-3 flex gap-2">
+          <input
+            className="flex-1 rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/20"
+            placeholder="Add tag name"
+            value={tagName}
+            onChange={(e) => setTagName(e.target.value)}
+          />
+          <button
+            className="rounded-2xl bg-gray-900 px-4 py-3 text-sm font-semibold text-white hover:bg-black disabled:opacity-50"
+            disabled={!tagName.trim()}
+            onClick={() => {
+              void saveTag(tagName.trim());
+              setTagName("");
+            }}
+          >
+            Add
+          </button>
+        </div>
+        <div className="mt-3 space-y-2">
+          {tags
+            .filter((t) => t.companyId === session.companyId)
+            .map((t) => (
+              <div key={t.id} className="flex items-center justify-between rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3">
+                <div className="text-sm font-semibold text-gray-900">{t.name}</div>
+                <button
+                  className="rounded-xl border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-900 hover:bg-gray-50"
+                  onClick={() => void deleteTag(t.id)}
+                >
+                  Delete
+                </button>
+              </div>
+            ))}
         </div>
       </section>
     </div>

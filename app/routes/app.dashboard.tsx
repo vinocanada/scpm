@@ -1,18 +1,18 @@
 import React from "react";
 import { useApp } from "../components/AppProvider";
-import { formatHours, shiftWorkSeconds, startOfDay, startOfWeek, startOfYear } from "../lib/time";
+import { formatHours, startOfDay, startOfWeek, startOfYear, timeEntryWorkSeconds } from "../lib/time";
 
-function secondsInRange(shiftClockInAt: string, seconds: number, rangeStart: Date) {
-  const d = new Date(shiftClockInAt);
+function secondsInRange(clockInIso: string, seconds: number, rangeStart: Date) {
+  const d = new Date(clockInIso);
   if (Number.isNaN(d.getTime())) return 0;
   return d >= rangeStart ? seconds : 0;
 }
 
 export default function Dashboard() {
-  const { session, users, shifts, sites } = useApp();
+  const { session, employees, timeEntries, jobSites } = useApp();
   const now = new Date();
-  const me = users.find((u) => u.id === session.userId);
-  const activeSite = sites.find((s) => s.id === session.activeSiteId);
+  const me = employees.find((u) => u.id === session.employeeId);
+  const activeSite = jobSites.find((s) => s.id === session.activeSiteId);
 
   if (!me) {
     return (
@@ -26,16 +26,16 @@ export default function Dashboard() {
   const weekStart = startOfWeek(now);
   const yearStart = startOfYear(now);
 
-  const visibleUsers = me.role === "manager" ? users : [me];
+  const visibleUsers = me.role === "manager" ? employees : [me];
 
   const rows = visibleUsers.map((u) => {
-    const userShifts = shifts.filter((s) => s.userId === u.id);
-    const totals = userShifts.reduce(
+    const userEntries = timeEntries.filter((t) => t.employeeId === u.id);
+    const totals = userEntries.reduce(
       (acc, s) => {
-        const sec = shiftWorkSeconds(s, now);
-        acc.day += secondsInRange(s.clockInAt, sec, dayStart);
-        acc.week += secondsInRange(s.clockInAt, sec, weekStart);
-        acc.year += secondsInRange(s.clockInAt, sec, yearStart);
+        const sec = timeEntryWorkSeconds(s, now);
+        acc.day += secondsInRange(s.clockInTime, sec, dayStart);
+        acc.week += secondsInRange(s.clockInTime, sec, weekStart);
+        acc.year += secondsInRange(s.clockInTime, sec, yearStart);
         return acc;
       },
       { day: 0, week: 0, year: 0 },

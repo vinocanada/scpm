@@ -11,5 +11,8 @@ export default [
       route("gallery", "routes/app.photos.gallery.tsx"),
     ]),
     route("manage", "routes/app.manage.tsx"),
+    route("reports", "routes/app.reports.tsx"),
+    route("tracking", "routes/app.tracking.tsx"),
+    route("profile", "routes/app.profile.tsx"),
   ]),
 ] satisfies RouteConfig;

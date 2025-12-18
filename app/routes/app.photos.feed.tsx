@@ -2,9 +2,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import React from "react";
 import { useOutletContext } from "react-router";
 import { useApp } from "../components/AppProvider";
-import type { Photo } from "../lib/domain";
-import { upsertPhoto } from "../lib/db";
-import { makeId } from "../lib/storage";
+import type { JobPhoto } from "../lib/models";
 import type { PhotosOutletContext } from "./app.photos";
 
 function Chip({ text, onRemove }: { text: string; onRemove?(): void }) {
@@ -25,21 +23,19 @@ function Chip({ text, onRemove }: { text: string; onRemove?(): void }) {
 }
 
 export default function PhotosFeed() {
-  const { session, refresh } = useApp();
-  const { activeSiteId, usersById, filtered } = useOutletContext<PhotosOutletContext>();
+  const { savePhoto, session } = useApp();
+  const { activeSiteId, employeesById, filtered } = useOutletContext<PhotosOutletContext>();
   const [idx, setIdx] = React.useState(0);
-  const [note, setNote] = React.useState("");
   const [tagText, setTagText] = React.useState("");
-  const [commentText, setCommentText] = React.useState("");
+  const [comment, setComment] = React.useState("");
 
   const photos = filtered;
   const current = photos[idx];
 
   React.useEffect(() => {
     setIdx(0);
-    setNote("");
     setTagText("");
-    setCommentText("");
+    setComment("");
   }, [activeSiteId, photos.length]);
 
   if (!activeSiteId) {
@@ -59,9 +55,8 @@ export default function PhotosFeed() {
     );
   }
 
-  const save = (p: Photo) => {
-    upsertPhoto(p);
-    refresh();
+  const save = async (p: JobPhoto) => {
+    await savePhoto(p);
   };
 
   const onSwipe = (dir: "left" | "right") => {
@@ -69,12 +64,11 @@ export default function PhotosFeed() {
     const next = dir === "left" ? idx + 1 : idx - 1;
     const clamped = Math.max(0, Math.min(photos.length - 1, next));
     setIdx(clamped);
-    setNote("");
     setTagText("");
-    setCommentText("");
+    setComment("");
   };
 
-  const userName = (userId: string) => usersById.get(userId)?.name ?? "User";
+  const userName = (employeeId: string) => employeesById.get(employeeId)?.name ?? "User";
 
   return (
     <div className="space-y-4">
@@ -103,7 +97,13 @@ export default function PhotosFeed() {
                 if (info.offset.x > 80) onSwipe("right");
               }}
             >
-              <img src={current.dataUrl} alt="Job progress" className="h-full w-full object-cover" />
+              {!current.isVideo && current.imageURL ? (
+                <img src={current.imageURL} alt="Job progress" className="h-full w-full object-cover" />
+              ) : current.isVideo && current.videoURL ? (
+                <video src={current.videoURL} className="h-full w-full object-cover" controls />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center text-sm text-gray-500">Missing media</div>
+              )}
               <div className="absolute bottom-2 left-2 right-2 flex justify-between gap-2">
                 <button
                   className="rounded-xl bg-white/90 px-3 py-2 text-xs font-semibold text-gray-900 shadow hover:bg-white"
@@ -125,8 +125,8 @@ export default function PhotosFeed() {
         </div>
 
         <div className="mt-3 text-xs text-gray-500">
-          {new Date(current.createdAt).toLocaleString()} · Uploaded by{" "}
-          <span className="font-semibold text-gray-700">{userName(current.userId)}</span>
+          {new Date(current.date).toLocaleString()} · Uploaded by{" "}
+          <span className="font-semibold text-gray-700">{userName(current.employeeId)}</span>
         </div>
       </div>
 
@@ -138,7 +138,7 @@ export default function PhotosFeed() {
               <Chip
                 key={t}
                 text={t}
-                onRemove={() => save({ ...current, tags: current.tags.filter((x) => x !== t) })}
+                onRemove={() => void save({ ...current, tags: current.tags.filter((x) => x !== t) })}
               />
             ))
           ) : (
@@ -159,7 +159,7 @@ export default function PhotosFeed() {
               const t = tagText.trim();
               if (!t) return;
               if (current.tags.includes(t)) return;
-              save({ ...current, tags: [...current.tags, t] });
+              void save({ ...current, tags: [...current.tags, t] });
               setTagText("");
             }}
           >
@@ -169,68 +169,21 @@ export default function PhotosFeed() {
       </div>
 
       <div className="rounded-3xl border border-gray-200 bg-white p-4 shadow-sm">
-        <div className="text-sm font-semibold text-gray-900">Note</div>
+        <div className="text-sm font-semibold text-gray-900">Comment</div>
         <textarea
           className="mt-2 w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/20"
           rows={3}
-          placeholder="Add a note about this photo…"
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
+          placeholder="Add a comment about this photo/video…"
+          value={comment}
+          onChange={(e) => setComment(e.target.value)}
         />
         <button
           className="mt-2 w-full rounded-2xl border border-gray-200 px-4 py-3 text-sm font-semibold text-gray-900 hover:bg-gray-50 disabled:opacity-50"
-          disabled={!note.trim()}
-          onClick={() => {
-            save({ ...current, note: note.trim() });
-            setNote("");
-          }}
+          disabled={!comment.trim()}
+          onClick={() => void save({ ...current, comment: comment.trim() })}
         >
-          Save note
+          Save comment
         </button>
-      </div>
-
-      <div className="rounded-3xl border border-gray-200 bg-white p-4 shadow-sm">
-        <div className="text-sm font-semibold text-gray-900">Comments</div>
-        <div className="mt-3 space-y-2">
-          {current.comments.length ? (
-            current.comments.map((c) => (
-              <div key={c.id} className="rounded-2xl border border-gray-200 bg-gray-50 p-3">
-                <div className="text-xs font-semibold text-gray-700">
-                  {userName(c.userId)} · <span className="font-medium text-gray-500">{new Date(c.createdAt).toLocaleString()}</span>
-                </div>
-                <div className="mt-1 text-sm text-gray-900">{c.text}</div>
-              </div>
-            ))
-          ) : (
-            <div className="text-sm text-gray-600">No comments yet.</div>
-          )}
-        </div>
-        <div className="mt-3 flex gap-2">
-          <input
-            className="flex-1 rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/20"
-            placeholder="Add a comment…"
-            value={commentText}
-            onChange={(e) => setCommentText(e.target.value)}
-          />
-          <button
-            className="rounded-2xl bg-gray-900 px-4 py-3 text-sm font-semibold text-white hover:bg-black disabled:opacity-50"
-            disabled={!commentText.trim()}
-            onClick={() => {
-              const text = commentText.trim();
-              if (!text) return;
-              save({
-                ...current,
-                comments: [
-                  ...current.comments,
-                  { id: makeId("cmt"), userId: session.userId!, createdAt: new Date().toISOString(), text },
-                ],
-              });
-              setCommentText("");
-            }}
-          >
-            Post
-          </button>
-        </div>
       </div>
     </div>
   );
